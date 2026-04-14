@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Listen & Type Game</title>
+
+<style>
+    body {
+        font-family: Arial, sans-serif;
+        background: linear-gradient(135deg, #4facfe, #00f2fe);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+        transition: 0.3s;
+        overflow: hidden;
+    }
+
+    .game-container {
+        background: rgba(255,255,255,0.15);
+        backdrop-filter: blur(10px);
+        padding: 25px;
+        border-radius: 20px;
+        text-align: center;
+        width: 360px;
+        color: white;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        position: relative;
+        z-index: 2;
+    }
+
+    #word {
+        font-size: 30px;
+        margin: 15px 0;
+        opacity: 0;
+        transition: 0.5s;
+    }
+
+    input {
+        width: 90%;
+        padding: 10px;
+        border-radius: 10px;
+        border: none;
+        margin-bottom: 10px;
+    }
+
+    button {
+        padding: 10px;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        margin: 3px;
+    }
+
+    .listen { background: #ff9a9e; color: white; }
+    .submit { background: #43e97b; color: white; }
+
+    #timer, #score, #combo, #level, #highscore {
+        margin-top: 8px;
+    }
+
+    .low { color: red; animation: pulse 0.5s infinite; }
+
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.2); }
+        100% { transform: scale(1); }
+    }
+
+    .game-over {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.85);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+        color: white;
+        text-align: center;
+        z-index: 10;
+    }
+
+    .particle {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        animation: floatUp 1s linear forwards;
+    }
+
+    @keyframes floatUp {
+        0% { transform: translateY(0) scale(1); opacity: 1; }
+        100% { transform: translateY(-150px) scale(0); opacity: 0; }
+    }
+</style>
+</head>
+
+<body>
+
+<div class="game-container">
+    <h2>🎧 Listen & Type</h2>
+
+    <p id="level">Level: Easy</p>
+    <p id="highscore">🏆 High Score: 0</p>
+
+    <p id="word">Ready?</p>
+
+    <input id="answer" placeholder="Type what you hear">
+
+    <br>
+
+    <button class="listen" onclick="speak()">🔊 Listen</button>
+    <button class="submit" onclick="check()">✅ Submit</button>
+
+    <p id="timer">Time: 20</p>
+    <p id="score">Score: 0</p>
+    <p id="combo">Combo: 0</p>
+</div>
+
+<!-- GAME OVER -->
+<div class="game-over" id="gameOverScreen">
+    <h1>💀 GAME OVER</h1>
+    <p id="finalScore"></p>
+    <p id="finalCombo"></p>
+    <button onclick="restart()">🔁 Restart</button>
+</div>
+
+<script>
+
+/* LEVEL WORDS */
+const easyWords = ["cat","dog","sun","book","tree","ball","milk","fish","house","car"];
+const mediumWords = ["apple","school","happy","water","friend","garden","pencil","window","teacher","family"];
+const hardWords = ["electricity","geography","knowledge","pronunciation","environment","communication","responsibility","transportation"];
+
+const correctSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+const wrongSound = new Audio("https://actions.google.com/sounds/v1/fail/fail_buzz.ogg");
+
+let level = "Easy";
+let words = easyWords;
+
+let current = "";
+let score = 0;
+let combo = 0;
+let wrong = 0;
+let time = 15;
+let timer;
+let gameRunning = true;
+
+/* 🏆 HIGH SCORE */
+let highScore = localStorage.getItem("highScore") || 0;
+document.getElementById("highscore").innerText = "🏆 High Score: " + highScore;
+
+/* TIMER */
+function startTimer(){
+    clearInterval(timer);
+    time = 15;
+
+    timer = setInterval(() => {
+        if(!gameRunning) return;
+
+        time--;
+        document.getElementById("timer").innerText = "Time: " + time;
+
+        if(time <= 3){
+            document.getElementById("timer").classList.add("low");
+        } else {
+            document.getElementById("timer").classList.remove("low");
+        }
+
+        if(time === 0){
+            wrong++;
+            fail();
+        }
+    }, 1000);
+}
+
+/* SPEAK */
+function speak(){
+    if(!gameRunning) return;
+
+    current = words[Math.floor(Math.random()*words.length)];
+
+    document.getElementById("word").innerText = current;
+    document.getElementById("word").style.opacity = 1;
+
+    speechSynthesis.speak(new SpeechSynthesisUtterance(current));
+
+    setTimeout(() => {
+        document.getElementById("word").style.opacity = 0;
+    }, 1000);
+
+    startTimer();
+}
+
+/* CHECK ANSWER */
+function check(){
+    if(!gameRunning) return;
+
+    clearInterval(timer);
+
+    let input = document.getElementById("answer").value.toLowerCase();
+
+    if(input === current){
+        score += 5;        // ✅ correct gives +10
+        combo++;
+        correctSound.play();
+        createParticles();
+    } else {
+        score -= 5;         // ❌ wrong gives -5 penalty
+        combo = 0;
+        wrongSound.play();
+    }
+
+    if(score < 0) score = 0;
+
+    updateLevel();
+    updateUI();
+    nextWord();
+}
+
+/* LEVEL SYSTEM */
+function updateLevel(){
+    if(score >= 150){
+        level = "Hard";
+        words = hardWords;
+    } else if(score >= 70){
+        level = "Medium";
+        words = mediumWords;
+    } else {
+        level = "Easy";
+        words = easyWords;
+    }
+
+    document.getElementById("level").innerText = "Level: " + level;
+}
+
+/* PARTICLES */
+function createParticles(){
+    for(let i=0; i<15; i++){
+        let p = document.createElement("div");
+        p.classList.add("particle");
+
+        p.style.left = Math.random()*window.innerWidth + "px";
+        p.style.top = "70%";
+        p.style.background = randomColor();
+
+        document.body.appendChild(p);
+
+        setTimeout(() => p.remove(), 1000);
+    }
+}
+
+function randomColor(){
+    const colors = ["#00ff99","#00ccff","#ffcc00","#ff4dff","#ffffff"];
+    return colors[Math.floor(Math.random()*colors.length)];
+}
+
+/* FAIL */
+function fail(){
+    combo = 0;
+    updateUI();
+    nextWord();
+}
+
+/* UI */
+function updateUI(){
+    document.getElementById("score").innerText = "Score: " + score;
+    document.getElementById("combo").innerText = "Combo: " + combo;
+
+    if(wrong >= 3){
+        endGame();
+    }
+}
+
+/* NEXT WORD */
+function nextWord(){
+    if(!gameRunning) return;
+
+    document.getElementById("answer").value = "";
+    speak();
+}
+
+/* END GAME */
+function endGame(){
+    gameRunning = false;
+    clearInterval(timer);
+
+    /* 🏆 SAVE HIGH SCORE */
+    if(score > highScore){
+        highScore = score;
+        localStorage.setItem("highScore", highScore);
+    }
+
+    document.getElementById("highscore").innerText = "🏆 High Score: " + highScore;
+
+    document.getElementById("gameOverScreen").style.display = "flex";
+    document.getElementById("finalScore").innerText = "Score: " + score;
+    document.getElementById("finalCombo").innerText = "Best Combo: " + combo;
+}
+
+/* RESTART */
+function restart(){
+    score = 0;
+    combo = 0;
+    wrong = 0;
+    gameRunning = true;
+
+    document.getElementById("gameOverScreen").style.display = "none";
+
+    updateUI();
+    speak();
+}
+
+</script>
+
+</body>
+</html>
